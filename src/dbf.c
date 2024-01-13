@@ -342,9 +342,12 @@ void DbfSerializerReset(DbfSerializer *s)
 	ST_ASSERT_SIZE(s->buffer, s->capacity);
 	#endif
 	s->pos = 0;
-	s->encoderState = DBF_ENCODER_IDLE;
+	if (s->encoderState != DBF_ENCODER_ASCII_MODE)
+	{
+		s->encoderState = DBF_ENCODER_IDLE;
+		s->prev_code = 0;
+	}
 	s->repeat_counter = 0;
-	s->prev_code = 0;
 }
 
 static void DbfSerializerResizeIfNeeded(DbfSerializer* s, long needed_capacity)
@@ -1146,8 +1149,12 @@ static void DbfUnserializerTakeSpecial(DbfUnserializer *u)
 	}
 }
 
-
 #ifdef DBF_AND_ASCII
+static int is_part_of_number(int ch)
+{
+	return (isdigit(ch)) || (ch=='-');
+}
+
 static void DbfUnserializerTakeAsciiSpace(DbfUnserializer *u)
 {
 	// Skip all space.
@@ -1164,7 +1171,7 @@ static void DbfUnserializerTakeAsciiSpace(DbfUnserializer *u)
 	{
 		const int ch = u->msgPtr[u->readPos];
 
-		if ((isdigit(ch)) || (ch=='-'))
+		if (is_part_of_number(ch))
 		{
 			u->decodeState = DbfAsciiNumberState;
 		}
@@ -1279,7 +1286,7 @@ DBF_CRC_RESULT DbfUnserializerInitTakeCrc(DbfUnserializer *u, const unsigned cha
 	}
 }
 
-DBF_CRC_RESULT DbfUnserializerInitEncoding(DbfUnserializer *u, const unsigned char *msgPtr, unsigned int msgSize, int encoding)
+DBF_CRC_RESULT DbfUnserializerInitEncoding(DbfUnserializer *u, const unsigned char *msgPtr, unsigned int msgSize, encoder_states_type encoding)
 {
 	assert(u);
 	switch(encoding)
@@ -1346,6 +1353,14 @@ DBF_CRC_RESULT DbfUnserializerInit(DbfUnserializer *dbfUnserializer, const unsig
 
 
 
+void DbfUnserializerDeinit(DbfUnserializer *u)
+{
+	if (u->decodeState != DbfEndOfMsgState)
+	{
+		printf("Message was not fully unserialized %d\n", u->decodeState);
+	}
+	memset(u, 0, sizeof(*u));
+}
 
 
 DbfCodeTypesEnum DbfUnserializerGetNextType(const DbfUnserializer *u, unsigned int idx)
@@ -1377,7 +1392,7 @@ int64_t DbfUnserializerReadInt64(DbfUnserializer *u)
 		//case DbfAsciiStringState:
 			const char* str = (const char*)&u->msgPtr[u->readPos];
 			const int64_t i = utility_atoll(str);
-			while (isalnum(u->msgPtr[u->readPos]))
+			while (is_part_of_number(u->msgPtr[u->readPos]))
 			{
 				u->readPos++;
 			}
@@ -1434,11 +1449,13 @@ int64_t DbfUnserializerReadInt64(DbfUnserializer *u)
 			DbfUnserializerTakeSpecial(u);
 			break;
 		}
+		case DbfUnserializerErrorState:
+			return -1;
 		default:
-			printf("Not integer\n");
+			printf("DbfUnserializerReadInt64: Not integer\n");
+			u->decodeState = DbfUnserializerErrorState;
 			return -1;
 	}
-
 	return 0;
 }
 
@@ -2206,7 +2223,7 @@ void DbfReceiverReset(DbfReceiver *r)
 //  0 ASCII message
 //  1 if compressed DBF
 // -1 if unknown/faulty
-int DbfReceiverGetEncoding(const DbfReceiver *r)
+encoder_states_type DbfReceiverGetEncoding(const DbfReceiver *r)
 {
 	assert(r);
 	switch(r->receiverState)

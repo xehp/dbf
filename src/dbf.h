@@ -103,7 +103,8 @@ typedef enum
 } dbf_format_codes;
 
 // States for the DBF serializer encoderState.
-typedef enum
+typedef enum encoder_states_type encoder_states_type;
+enum encoder_states_type
 {
 	DBF_ENCODER_IDLE = 0, // Perhaps remove this and use DBF_ENCODING_INT as initial value.
 	DBF_ENCODING_INT = 1,
@@ -113,7 +114,7 @@ typedef enum
 	DBF_ENCODER_ASCII_MODE = 4,
 	#endif
 	DBF_ENCODING_STR = 5,
-} encoder_states_type;
+};
 
 struct DbfSerializer {
 	#if !defined DBF_FIXED_MSG_SIZE
@@ -164,7 +165,7 @@ void DbfSerializerAllToString(const DbfSerializer *s, char *bufPtr, size_t bufSi
 typedef enum
 {
 	DbfNextIsIntegerState,
-	DbfNextIsWordState, // A word is an unquoted string (man not contain space or slash).
+	DbfNextIsWordState, // A word is an unquoted string (may not contain space or slash).
 	DbfNextIsStringState,
 	DbfEndOfMsgState,
 	#ifdef DBF_AND_ASCII
@@ -172,6 +173,7 @@ typedef enum
 	DbfAsciiWordState,
 	DbfAsciiStringState,
 	#endif
+	DbfUnserializerErrorState,
 } DbfDecodingStateEnum;
 
 typedef enum
@@ -216,7 +218,7 @@ DBF_CRC_RESULT DbfUnserializerInitCopyUnserializer(DbfUnserializer *, const DbfU
 DBF_CRC_RESULT DbfUnserializerInitAscii(DbfUnserializer *dbfUnserializer, const unsigned char *msgPtr, unsigned int msgSize);
 DBF_CRC_RESULT DbfUnserializerInitAsciiSerializer(DbfUnserializer *u, const DbfSerializer *dbfSerializer);
 #endif
-DBF_CRC_RESULT DbfUnserializerInitEncoding(DbfUnserializer *u, const unsigned char *msgPtr, unsigned int msgSize, int encoding);
+DBF_CRC_RESULT DbfUnserializerInitEncoding(DbfUnserializer *u, const unsigned char *msgPtr, unsigned int msgSize, encoder_states_type encoding);
 DBF_CRC_RESULT DbfUnserializerInitReceiver(DbfUnserializer *u, const DbfReceiver *receiver);
 //DBF_CRC_RESULT DbfUnserializerInit(DbfUnserializer *dbfUnserializer, const unsigned char *msgPtr, unsigned int msgSize);
 
@@ -248,8 +250,7 @@ char DbfUnserializerIsOk(DbfUnserializer *dbfUnserializer);
 size_t DbfUnserializerReadAllToString(DbfUnserializer *u, char *bufPtr, size_t bufSize);
 size_t DbfUnserializerCopyAllToString(const DbfUnserializer *u, char *bufPtr, size_t bufSize);
 
-// Empty macro for consistency, all objects with an init shall also have a deinit.
-#define DbfUnserializerDeinit(u)
+void DbfUnserializerDeinit(DbfUnserializer *dbfUnserializer);
 
 #define DBF_RCV_TIMEOUT_MS 5000
 
@@ -300,7 +301,7 @@ void DbfReceiverTick(DbfReceiver *dbfReceiver);
 int DbfReceiverToString(DbfReceiver *dbfReceiver, const char* bufPtr, int bufLen);
 int DbfReceiverLogRawData(const DbfReceiver *dbfReceiver);
 
-int DbfReceiverGetEncoding(const DbfReceiver *receiver);
+encoder_states_type DbfReceiverGetEncoding(const DbfReceiver *receiver);
 
 #if defined __linux__ || defined __WIN32
 void DbfLogBuffer(const char* prefix, const unsigned char *bufPtr, int bufLen);
